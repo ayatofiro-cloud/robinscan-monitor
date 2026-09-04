@@ -1,0 +1,53 @@
+name: Robinscan Yeni Token Izleyici
+
+on:
+  schedule:
+    # GitHub Actions'ta izin verilen en kisa aralik 5 dakikadir.
+    # NOT: yogun saatlerde GitHub bu tetiklemeyi birkac dakika geciktirebilir,
+    # "tam 5 dakikada bir" garantisi vermez.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # Actions sekmesinden elle "Run workflow" ile de tetikleyebilirsin
+
+# Ayni anda iki kontrolun ust uste binmesini onler
+concurrency:
+  group: robinscan-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # state dosyasini (seen_tokens.json) repoya commit edebilmek icin
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Bagimliliklari kur
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Kontrol scriptini calistir
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 robinscan_telegram_bot.py
+
+      - name: State dosyasini repoya kaydet (varsa degisiklik)
+        run: |
+          git config user.name "robinscan-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/seen_tokens.json
+          if ! git diff --cached --quiet; then
+            git commit -m "state guncelle: $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          else
+            echo "Degisiklik yok, commit atlanadi."
+          fi
